@@ -1,0 +1,83 @@
+package handler
+
+import (
+	"fmt"
+	"log"
+	"mafriend-tv/internal/model"
+	"mafriend-tv/internal/usecase"
+	"math/rand"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/gorilla/websocket"
+)
+
+// Konfigurasi upgrader dari HTTP ke WebSocket
+var upgrader = websocket.Upgrader{
+	ReadBufferSize: 1024,
+	WriteBufferSize: 1024,
+}
+
+type MatchHandler struct {
+	usecase *usecase.MatchUsecase
+}
+
+func NewMatchHandler(u *usecase.MatchUsecase) *MatchHandler {
+	return &MatchHandler{usecase: u}
+}
+
+func (h *MatchHandler) HandleWS(c fiber.Ctx) error {
+	// 1. Bypass CORS (Sangat penting buat React JS nanti)
+	upgrader.CheckOrigin = func(r *websocket.FastHTTP) bool { return true }
+
+	// 2. Upgrade koneksi menggunakan fasthttp adapter bawaan Fiber v3
+	// Karena kita pakai Fiber v3, kita pakai adapter WebSocket bawaan atau raw fasthttp. 
+	// Untuk memudahkan, kita pakai cara standar gorilla websocket:
+	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		log.Println("Gagal upgrade ke websocket:", err)
+		return nil
+	}
+
+	// Mocking ID Random seolah-olah dia user ber-ID unik
+	userID := fmt.Sprintf("User-%d", rand.Intn(9000)+1000)
+
+	client := &model.Client{
+		ID:   userID,
+		Conn: conn,
+		Send: make(chan []byte, 256),
+	}
+
+	// 3. Jalankan Goroutine Writer (Khusus buat ngirim pesan dari Go ke Browser)
+	go func() {
+		defer conn.Close()
+		for message := range client.Send {
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				break
+			}
+		}
+	}()
+
+	// Register user ke sistem pencari jodoh
+	h.usecase.RegisterClient(client)
+
+	// 4. Goroutine Reader Loop (Menunggu pesan masuk dari browser)
+	defer func() {
+		h.usecase.RemoveClient(client)
+		conn.Close()
+	}()
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			break // Jika browser di-close atau disconnect, keluar loop
+		}
+		
+		// Jika sudah punya pasangan, oper pesannya langsung ke pasangannya (Signaling WebRTC)
+		if client.Peer != nil {
+			client.Peer.Send <- message
+		}
+	}
+
+	return nil
+	
+}
