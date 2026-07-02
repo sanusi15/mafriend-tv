@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 // Gunakan Upgrader Gorilla standard resmi
@@ -21,14 +22,25 @@ var upgrader = websocket.Upgrader{
 
 type MatchHandler struct {
 	usecase *usecase.MatchUsecase
+	db *gorm.DB
 }
 
-func NewMatchHandler(u *usecase.MatchUsecase) *MatchHandler {
-	return &MatchHandler{usecase: u}
+func NewMatchHandler(u *usecase.MatchUsecase, db *gorm.DB) *MatchHandler {
+	return &MatchHandler{
+		usecase: u,
+		db: db,
+	}
 }
 
 // 💡 INI ADALAH STANDARD HANDLER NET/HTTP BIASA
 func (h *MatchHandler) HandleGorillaWS(w http.ResponseWriter, r *http.Request) {
+	// 💡 Ambil GoogleID aman hasil bongkar JWT dari header request
+	googleID := r.Header.Get("X-User-GoogleID")
+
+	// Tarik data profil aslinya dari DB untuk dipajang saat match
+	var user model.User
+	h.db.Where("google_id = ?", googleID).First(&user)
+
 	// Upgrade koneksi HTTP murni menjadi WebSocket murni via Gorilla
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
