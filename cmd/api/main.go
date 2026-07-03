@@ -53,6 +53,6 @@ func main() {
 	// Ubah handler net/http Gorilla agar bisa dijalankan di rute Fiber v3
 	app.Get("/ws-mafriend", adaptor.HTTPHandlerFunc(matchHandler.HandleGorillaWS))
 
-	log.Println("Server OmeTV Backend berjalan di port 3000...")
+	log.Println("Server MaFriendTv Backend berjalan di port 3000...")
 	log.Fatal(app.Listen(":3000"))
 }
